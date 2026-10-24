@@ -3,7 +3,7 @@
   "name": "github-ci-status",
   "title": "GitHub CI Status",
   "description": "Watch recent GitHub Actions runs across your accessible repositories.",
-  "icon": "extension-icon.png",
+  "icon": "ci-status-icon.png",
   "author": "Dawid Glinkowski",
   "license": "MIT",
   "categories": [
