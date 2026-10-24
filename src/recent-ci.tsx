@@ -15,6 +15,7 @@ import { parseLookback, Repository, runStatus, WorkflowRun } from "./lib/model";
 import { ConfigureRepositories } from "./configure-repositories";
 import { useRecentCI } from "./lib/use-recent-ci";
 import { github } from "./lib/oauth";
+import { useTrackedRuns } from "./lib/use-tracked-runs";
 
 function PreferencesAction() {
   return <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />;
@@ -81,6 +82,8 @@ function RecentCI({
   setRepositories: (repositories: Repository[] | null) => Promise<void>;
 }) {
   const { snapshot, loading, cached, refresh } = useRecentCI(token, lookback, repositories);
+  const { tracked, toggle, reload: reloadTracked } = useTrackedRuns(token);
+  const trackedIds = new Set(tracked.map((watch) => watch.run.id));
   const progress = loading
     ? `Checking ${snapshot.checked}/${snapshot.total || "…"} repositories`
     : `${snapshot.checked}/${snapshot.total} repositories checked`;
@@ -88,11 +91,26 @@ function RecentCI({
   const issues = snapshot.issues.map((issue) => `${issue.repository ?? "Scan"}: ${issue.message}`).join("\n\n");
   const details = `# Scan status\n\n${summary}\n\n\`\`\`text\n${issues.replaceAll("`", "'") || "No scan issues."}\n\`\`\``;
 
-  function Actions({ run, showIssues = false }: { run?: WorkflowRun; showIssues?: boolean }) {
+  function renderActions({ run, showIssues = false }: { run?: WorkflowRun; showIssues?: boolean } = {}) {
     return (
       <ActionPanel>
         {showIssues && <Action.Push title="View Scan Issues" target={<Detail markdown={details} />} />}
-        {run && <Action.OpenInBrowser title="Open Workflow Run" url={run.html_url} />}
+        {run && (
+          <ActionPanel.Submenu
+            title="Workflow Options"
+            icon={Icon.List}
+            onOpen={() => void reloadTracked().catch(console.error)}
+          >
+            <Action.OpenInBrowser title="Open in Browser" url={run.html_url} />
+            {(trackedIds.has(run.id) || run.status !== "completed") && (
+              <Action
+                title={trackedIds.has(run.id) ? "Untrack Notifications" : "Track Notifications"}
+                icon={trackedIds.has(run.id) ? Icon.BellDisabled : Icon.Bell}
+                onAction={() => toggle(run)}
+              />
+            )}
+          </ActionPanel.Submenu>
+        )}
         {!run && !showIssues && (
           <Action
             title="Refresh"
@@ -142,10 +160,30 @@ function RecentCI({
             icon={{ source: Icon.ExclamationMark, tintColor: Color.Orange }}
             title="Some results could not be refreshed"
             subtitle={`${snapshot.issues.length} scan issues · Cached results may be stale`}
-            actions={<Actions showIssues />}
+            actions={renderActions({ showIssues: true })}
           />
         </List.Section>
       )}
+      <List.Section title="Tracked runs outside current results">
+        {tracked
+          .filter(({ run }) => !snapshot.runs.some((item) => item.id === run.id))
+          .map(({ run }) => (
+            <List.Item
+              key={run.id}
+              id={String(run.id)}
+              title={run.display_title || run.name || "Workflow run"}
+              subtitle={run.repository.full_name}
+              icon={icons[runStatus(run).kind]}
+              keywords={[run.name ?? "", run.head_branch ?? "", run.head_sha]}
+              accessories={[
+                { icon: Icon.Bell, tooltip: "Notifications enabled for this run" },
+                { text: run.head_branch ?? run.head_sha.slice(0, 7) },
+                { text: runStatus(run).label, tooltip: "Last observed status from the background monitor" },
+              ]}
+              actions={renderActions({ run })}
+            />
+          ))}
+      </List.Section>
       <List.Section title={`Workflow runs · Last ${period}`} subtitle={summary}>
         {snapshot.runs.map((run) => {
           const status = runStatus(run);
@@ -162,6 +200,7 @@ function RecentCI({
               subtitle={run.repository.full_name}
               keywords={[run.name ?? "", run.head_branch ?? "", run.head_sha, status.label]}
               accessories={[
+                ...(trackedIds.has(run.id) ? [{ icon: Icon.Bell, tooltip: "Notifications enabled for this run" }] : []),
                 ...(stale
                   ? [
                       {
@@ -177,7 +216,7 @@ function RecentCI({
                 { tag: { value: status.label, color: icons[status.kind].tintColor }, tooltip: run.name ?? "Workflow" },
                 { date: new Date(run.created_at), tooltip: `Created ${new Date(run.created_at).toLocaleString()}` },
               ]}
-              actions={<Actions run={run} />}
+              actions={renderActions({ run })}
             />
           );
         })}
@@ -198,7 +237,7 @@ function RecentCI({
               ? progress
               : `No GitHub Actions runs were created in the last ${period}. ${summary}`
         }
-        actions={<Actions />}
+        actions={renderActions()}
       />
     </List>
   );

@@ -114,6 +114,12 @@ export class GitHubClient {
     }
   }
 
+  async run(repository: Repository, id: number, signal: AbortSignal): Promise<WorkflowRun> {
+    const path = repository.full_name.split("/").map(encodeURIComponent).join("/");
+    const { data } = await this.get<WorkflowRun>(`/repos/${path}/actions/runs/${id}`, signal);
+    return { ...data, repository };
+  }
+
   async scan(options: {
     lookback: number;
     previous: WorkflowRun[];

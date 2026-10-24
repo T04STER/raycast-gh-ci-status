@@ -28,13 +28,31 @@ const json = (data: unknown, status = 200, headers: Record<string, string> = {})
 const mockFetch = (handler: (url: URL, init?: RequestInit) => Response | Promise<Response>): typeof fetch =>
   ((input: string | URL | Request, init?: RequestInit) =>
     Promise.resolve(handler(new URL(String(input)), init))) as typeof fetch;
-const scan = (client: GitHubClient, previous: WorkflowRun[] = [], onProgress = (_: Snapshot) => {}) =>
+const scan = (
+  client: GitHubClient,
+  previous: WorkflowRun[] = [],
+  onProgress: (snapshot: Snapshot) => void = () => {},
+) =>
   client.scan({
     lookback: 3_600_000,
     previous,
     signal: new AbortController().signal,
     onProgress,
   });
+
+test("fetching a tracked run uses its ID without a lookback or repository discovery", async () => {
+  const client = new GitHubClient(
+    "secret",
+    mockFetch((url) => {
+      assert.equal(url.pathname, "/repos/owner/repo-1/actions/runs/42");
+      assert.equal(url.search, "");
+      return json({ ...run(42), created_at: "2020-01-01T00:00:00Z" });
+    }),
+  );
+  const result = await client.run(repo(1), 42, new AbortController().signal);
+  assert.equal(result.id, 42);
+  assert.equal(result.repository.full_name, "owner/repo-1");
+});
 
 test("discovery paginates, deduplicates, and uses a cache without dropping archived repositories", async () => {
   let calls = 0;

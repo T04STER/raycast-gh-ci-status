@@ -1,6 +1,6 @@
 # GitHub CI Status
 
-One Raycast command, **Recent CI**, showing recent GitHub Actions runs across repositories accessible to your GitHub OAuth sign-in.
+**Recent CI** shows recent GitHub Actions runs across repositories accessible to your GitHub OAuth sign-in. **Watch CI Notifications** checks individually tracked runs in the background and sends clickable macOS notifications when they finish.
 
 ## Run locally
 
@@ -17,15 +17,36 @@ Open **Recent CI** in Raycast and sign in through GitHub. No PAT or custom OAuth
 
 - The rolling lookback defaults to **1h**. Change **Lookback Period** in the extension's native preferences; supported durations include `30m`, `1h`, and `2d`.
 - Passed runs are green, failures red, and queued/running runs yellow. Cancelled/skipped results have separate labels.
-- **Enter** opens the selected workflow run on GitHub.
+- **Enter** opens Workflow Options. **Open in Browser** is selected first; press **Enter** again to open the run on GitHub. Press **↓** to select **Track Notifications** / **Untrack Notifications**, then **Enter** to toggle notifications for that specific run.
+- A bell marks runs with notifications enabled. Tracked runs remain accessible in a separate section after they leave the rolling lookback window, so you can still open or untrack them.
 - **⌘R** refreshes results and repository discovery.
 - **Configure Repositories** in the **Actions** menu (**⌘K**), also available via **⌘⇧R**, opens a searchable repository list. Press **Enter** to toggle tracking; changes save immediately. Press **Esc** to return to CI results.
 - After searching repositories, use **Track Filtered Repositories** (**⌘⇧T**) or **Untrack Filtered Repositories** (**⌘⇧U**) in **Actions** to update all matches while keeping other repositories unchanged. Search matches repository names without regard to case.
 - All repositories are tracked by default. After choosing specific repositories, only those repositories are queried for CI, with no full repository discovery during scans. Untracking all repositories pauses CI fetching. Use **Track All Repositories** in the configuration actions to restore automatic tracking of all accessible repositories.
-- Results refresh every 30 seconds while the command is open. Closing it stops polling.
+- The main results refresh every 30 seconds while the command is open. **Watch CI Notifications** independently checks tracked runs approximately every minute, including when the main view is closed.
 - Search by repository, workflow, branch, status, or commit SHA.
 
-The time filter uses run creation time. Runs created before the cutoff are excluded even if still running. This version covers GitHub Actions only.
+The time filter uses run creation time. Runs created before the cutoff are excluded from the main results even if still running; individually tracked runs are checked directly by ID regardless of age. This version covers GitHub Actions only.
+
+## Notifications
+
+Notifications require `terminal-notifier`, installed through Homebrew:
+
+```sh
+brew install terminal-notifier
+```
+
+Both Apple Silicon (`/opt/homebrew/bin`) and Intel (`/usr/local/bin`) Homebrew installations are detected automatically. Tracking reports a setup error if the tool is missing.
+
+After signing in through **Recent CI**, open **Watch CI Notifications** once and make sure **Background Refresh** is enabled for that command in Raycast Settings → Extensions → GitHub CI Status. Tracking a run also requests an immediate background check. Raycast controls scheduling, so checks may be delayed, especially on battery or while the computer is asleep. Background Refresh must remain enabled and Raycast must be running. If scheduled execution does not run for a development extension, use Raycast's **Run in Background** action to test it manually and check **Extension Diagnostics**.
+
+Allow notifications for **terminal-notifier** in macOS System Settings → Notifications. Focus and notification settings can suppress banners. This extension does not change those settings.
+
+Notifications include the final result, repository, workflow, branch, commit title, short SHA, and attempt number. Clicking the notification opens that run on GitHub. Success, failure, timeout, and cancellation are supported; other completed results such as skipped are reported with a neutral icon. The notification describes the workflow result, not an individual failed job or log excerpt.
+
+Tracking is per run, separate from the repository filter. A tracked run stays tracked until you untrack it, including for later attempts of that same run. It does not subscribe to future runs of the workflow. Each newly completed attempt sends one notification. Only runs that have not completed can be newly tracked. Completed runs hide Track Notifications; already tracked runs can still be untracked after completion. Delivery errors retain the pending result for a later retry. No GitHub authorization dialog is opened by background checks; sign in again through **Recent CI** if access expires or is revoked.
+
+The monitor's command subtitle shows the last scan summary or an actionable error. A scan uses up to four concurrent requests and a 45-second request budget. It never requires full repository discovery, and an empty watch list makes no GitHub requests.
 
 Repository discovery is cached for 15 minutes. Scans use four concurrent workers, pagination, request timeouts, and rate-limit handling. Partial failures are displayed; cached results are marked as potentially stale. GitHub limits filtered searches to 1,000 runs per repository, which produces a warning if reached.
 

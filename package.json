@@ -15,6 +15,13 @@
       "title": "Recent CI",
       "description": "Watch recent GitHub Actions runs and open them on GitHub",
       "mode": "view"
+    },
+    {
+      "name": "watch-ci",
+      "title": "Watch CI Notifications",
+      "description": "Check tracked workflow runs and send clickable macOS notifications when they finish",
+      "mode": "no-view",
+      "interval": "1m"
     }
   ],
   "scripts": {
