@@ -13,9 +13,8 @@ function readCache<T>(cache: Cache, key: string): T | undefined {
   }
 }
 
-export function useRecentCI(token: string, lookback: number) {
+export function useGitHubClient(token: string) {
   const cache = useMemo(() => new Cache({ namespace: createHash("sha256").update(token).digest("hex") }), [token]);
-  const key = `runs:${lookback}`;
   const client = useMemo(
     () =>
       new GitHubClient(token, fetch, {
@@ -24,6 +23,19 @@ export function useRecentCI(token: string, lookback: number) {
       }),
     [token, cache],
   );
+  return { cache, client };
+}
+
+export function useRecentCI(token: string, lookback: number, repositories: Repository[] | null) {
+  const { cache, client } = useGitHubClient(token);
+  const key = `runs:${lookback}:${
+    repositories === null
+      ? "all"
+      : repositories
+          .map((repo) => repo.id)
+          .sort((a, b) => a - b)
+          .join(",")
+  }`;
   const [snapshot, setSnapshot] = useState<Snapshot>(() => {
     const saved = readCache<Snapshot>(cache, key);
     return saved
@@ -54,6 +66,7 @@ export function useRecentCI(token: string, lookback: number) {
           previous: latest.current.runs,
           signal: controller.signal,
           forceDiscovery,
+          repositories,
           onProgress: update,
         });
         update(next);
@@ -78,11 +91,18 @@ export function useRecentCI(token: string, lookback: number) {
         }
       }
     },
-    [client, cache, key, lookback],
+    [client, cache, key, lookback, repositories],
   );
 
   useEffect(() => {
     mounted.current = true;
+    const saved = readCache<Snapshot>(cache, key);
+    const initial = saved
+      ? { ...saved, runs: recentRuns(saved.runs, Date.now() - lookback) }
+      : { runs: [], issues: [], checked: 0, total: 0 };
+    latest.current = initial;
+    setSnapshot(initial);
+    setCached(true);
     void refresh();
     const timer = setInterval(() => void refresh(), 30_000);
     return () => {
@@ -91,7 +111,7 @@ export function useRecentCI(token: string, lookback: number) {
       active.current?.abort();
       active.current = null;
     };
-  }, [refresh]);
+  }, [refresh, cache, key, lookback]);
 
   return { snapshot, loading, cached, refresh };
 }

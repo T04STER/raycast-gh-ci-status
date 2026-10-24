@@ -126,6 +126,76 @@ test("scan uses at most four workers and publishes progressive results", async (
   assert.deepEqual(events, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
 });
 
+test("explicit selection fetches only selected repositories without discovery or unselected cached runs", async () => {
+  const paths: string[] = [];
+  const snapshots: Snapshot[] = [];
+  const client = new GitHubClient(
+    "secret",
+    mockFetch((url) => {
+      paths.push(url.pathname);
+      assert.equal(url.pathname, "/repos/owner/repo-2/actions/runs");
+      return json({ message: "Forbidden" }, 403);
+    }),
+  );
+  const result = await client.scan({
+    lookback: 3_600_000,
+    previous: [run(1), run(2, repo(2))],
+    repositories: [repo(2)],
+    forceDiscovery: true,
+    signal: new AbortController().signal,
+    onProgress: (snapshot) => snapshots.push(snapshot),
+  });
+  assert.deepEqual(paths, ["/repos/owner/repo-2/actions/runs"]);
+  assert.equal(result.total, 1);
+  assert.equal(result.checked, 1);
+  assert.deepEqual(
+    result.runs.map((item) => item.id),
+    [2],
+  );
+  assert.ok(snapshots.every((snapshot) => snapshot.runs.every((item) => item.repository.id === 2)));
+  assert.equal(result.issues[0].repository, "owner/repo-2");
+});
+
+test("empty selection makes no requests and clears previous results", async () => {
+  const client = new GitHubClient(
+    "secret",
+    mockFetch(() => {
+      assert.fail("No GitHub requests should be made when no repositories are selected");
+    }),
+  );
+  const result = await client.scan({
+    lookback: 3_600_000,
+    previous: [run(1)],
+    repositories: [],
+    signal: new AbortController().signal,
+    onProgress: () => {},
+  });
+  assert.deepEqual(result.runs, []);
+  assert.deepEqual(result.issues, []);
+  assert.equal(result.total, 0);
+  assert.equal(result.checked, 0);
+});
+
+test("all-repositories selection preserves automatic discovery", async () => {
+  const paths: string[] = [];
+  const client = new GitHubClient(
+    "secret",
+    mockFetch((url) => {
+      paths.push(url.pathname);
+      return url.pathname === "/user/repos" ? json([repo(1)]) : json({ workflow_runs: [run(1)], total_count: 1 });
+    }),
+  );
+  const result = await client.scan({
+    lookback: 3_600_000,
+    previous: [],
+    repositories: null,
+    signal: new AbortController().signal,
+    onProgress: () => {},
+  });
+  assert.deepEqual(paths, ["/user/repos", "/repos/owner/repo-1/actions/runs"]);
+  assert.equal(result.runs.length, 1);
+});
+
 test("rate limit stops queued requests and honors retry backoff across scans", async () => {
   let runCalls = 0;
   const client = new GitHubClient(

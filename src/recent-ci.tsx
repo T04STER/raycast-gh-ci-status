@@ -9,8 +9,10 @@ import {
   List,
   openExtensionPreferences,
 } from "@raycast/api";
-import { getAccessToken, withAccessToken } from "@raycast/utils";
-import { parseLookback, runStatus, WorkflowRun } from "./lib/model";
+import { getAccessToken, useLocalStorage, withAccessToken } from "@raycast/utils";
+import { createHash } from "node:crypto";
+import { parseLookback, Repository, runStatus, WorkflowRun } from "./lib/model";
+import { ConfigureRepositories } from "./configure-repositories";
 import { useRecentCI } from "./lib/use-recent-ci";
 import { github } from "./lib/oauth";
 
@@ -21,6 +23,14 @@ function PreferencesAction() {
 function Command() {
   const preferences = getPreferenceValues<{ lookback: string }>();
   const { token } = getAccessToken();
+  const {
+    value: repositories,
+    setValue: setRepositories,
+    isLoading,
+  } = useLocalStorage<Repository[] | null>(
+    `tracked-repositories:${createHash("sha256").update(token).digest("hex")}`,
+    null,
+  );
   let lookback: number;
   try {
     lookback = parseLookback(preferences.lookback);
@@ -36,7 +46,16 @@ function Command() {
       />
     );
   }
-  return <RecentCI token={token} lookback={lookback} period={preferences.lookback.trim()} />;
+  if (isLoading) return <List isLoading />;
+  return (
+    <RecentCI
+      token={token}
+      lookback={lookback}
+      period={preferences.lookback.trim()}
+      repositories={repositories ?? null}
+      setRepositories={setRepositories}
+    />
+  );
 }
 
 export default withAccessToken(github)(Command);
@@ -48,8 +67,20 @@ const icons = {
   neutral: { source: Icon.MinusCircle, tintColor: Color.SecondaryText },
 };
 
-function RecentCI({ token, lookback, period }: { token: string; lookback: number; period: string }) {
-  const { snapshot, loading, cached, refresh } = useRecentCI(token, lookback);
+function RecentCI({
+  token,
+  lookback,
+  period,
+  repositories,
+  setRepositories,
+}: {
+  token: string;
+  lookback: number;
+  period: string;
+  repositories: Repository[] | null;
+  setRepositories: (repositories: Repository[] | null) => Promise<void>;
+}) {
+  const { snapshot, loading, cached, refresh } = useRecentCI(token, lookback, repositories);
   const progress = loading
     ? `Checking ${snapshot.checked}/${snapshot.total || "…"} repositories`
     : `${snapshot.checked}/${snapshot.total} repositories checked`;
@@ -62,12 +93,28 @@ function RecentCI({ token, lookback, period }: { token: string; lookback: number
       <ActionPanel>
         {showIssues && <Action.Push title="View Scan Issues" target={<Detail markdown={details} />} />}
         {run && <Action.OpenInBrowser title="Open Workflow Run" url={run.html_url} />}
-        <Action
-          title="Refresh"
-          icon={Icon.ArrowClockwise}
-          shortcut={Keyboard.Shortcut.Common.Refresh}
-          onAction={() => refresh(true)}
+        {!run && !showIssues && (
+          <Action
+            title="Refresh"
+            icon={Icon.ArrowClockwise}
+            shortcut={Keyboard.Shortcut.Common.Refresh}
+            onAction={() => refresh(true)}
+          />
+        )}
+        <Action.Push
+          title="Configure Repositories"
+          icon={Icon.Gear}
+          shortcut={{ modifiers: ["cmd", "shift"], key: "r" }}
+          target={<ConfigureRepositories token={token} selection={repositories} onChange={setRepositories} />}
         />
+        {(run || showIssues) && (
+          <Action
+            title="Refresh"
+            icon={Icon.ArrowClockwise}
+            shortcut={Keyboard.Shortcut.Common.Refresh}
+            onAction={() => refresh(true)}
+          />
+        )}
         {run?.pull_requests?.[0] && (
           <Action.OpenInBrowser
             title="Open Pull Request"
@@ -137,8 +184,20 @@ function RecentCI({ token, lookback, period }: { token: string; lookback: number
       </List.Section>
       <List.EmptyView
         icon={loading ? Icon.Clock : Icon.CheckList}
-        title={loading ? "Looking for recent CI runs…" : "No recent workflow runs"}
-        description={loading ? progress : `No GitHub Actions runs were created in the last ${period}. ${summary}`}
+        title={
+          repositories?.length === 0
+            ? "No repositories selected"
+            : loading
+              ? "Looking for recent CI runs…"
+              : "No recent workflow runs"
+        }
+        description={
+          repositories?.length === 0
+            ? "Use Configure Repositories (⌘⇧R) to choose repositories to track."
+            : loading
+              ? progress
+              : `No GitHub Actions runs were created in the last ${period}. ${summary}`
+        }
         actions={<Actions />}
       />
     </List>

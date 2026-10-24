@@ -119,12 +119,13 @@ export class GitHubClient {
     previous: WorkflowRun[];
     signal: AbortSignal;
     forceDiscovery?: boolean;
+    repositories?: Repository[] | null;
     onProgress: (snapshot: Snapshot) => void;
   }): Promise<Snapshot> {
     const { signal, onProgress } = options;
     const until = Date.now();
     const cutoff = until - options.lookback;
-    const repositories = await this.repositories(signal, options.forceDiscovery);
+    const repositories = options.repositories ?? (await this.repositories(signal, options.forceDiscovery));
     const accessible = new Set(repositories.map((repo) => repo.id));
     const byRepo = new Map<number, WorkflowRun[]>();
     for (const run of recentRuns(options.previous, cutoff)) {
