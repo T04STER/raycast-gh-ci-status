@@ -20,6 +20,7 @@ Open **Recent CI** in Raycast and sign in through GitHub. No PAT or custom OAuth
 - **Enter** opens the selected workflow run on GitHub.
 - **⌘R** refreshes results and repository discovery.
 - **Configure Repositories** in the **Actions** menu (**⌘K**), also available via **⌘⇧R**, opens a searchable repository list. Press **Enter** to toggle tracking; changes save immediately. Press **Esc** to return to CI results.
+- After searching repositories, use **Track Filtered Repositories** (**⌘⇧T**) or **Untrack Filtered Repositories** (**⌘⇧U**) in **Actions** to update all matches while keeping other repositories unchanged. Search matches repository names without regard to case.
 - All repositories are tracked by default. After choosing specific repositories, only those repositories are queried for CI, with no full repository discovery during scans. Untracking all repositories pauses CI fetching. Use **Track All Repositories** in the configuration actions to restore automatic tracking of all accessible repositories.
 - Results refresh every 30 seconds while the command is open. Closing it stops polling.
 - Search by repository, workflow, branch, status, or commit SHA.

@@ -19,6 +19,7 @@ export function ConfigureRepositories({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string>();
   const [revision, setRevision] = useState(0);
+  const [searchText, setSearchText] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,12 +55,39 @@ export function ConfigureRepositories({
     }
   }
 
-  const visible = [...new Map([...repositories, ...(selected ?? [])].map((repo) => [repo.id, repo])).values()].sort(
-    (a, b) => a.full_name.localeCompare(b.full_name),
-  );
+  const allRepositories = [
+    ...new Map([...repositories, ...(selected ?? [])].map((repo) => [repo.id, repo])).values(),
+  ].sort((a, b) => a.full_name.localeCompare(b.full_name));
+  const query = searchText.trim().toLowerCase();
+  const visible = allRepositories.filter((repo) => repo.full_name.toLowerCase().includes(query));
   const selectedIds = selected === null ? null : new Set(selected.map((repo) => repo.id));
   const commonActions = (
     <>
+      {query && visible.length > 0 && !loading && !error && (
+        <>
+          <Action
+            title="Track Filtered Repositories"
+            icon={Icon.Checkmark}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "t" }}
+            onAction={() =>
+              save(
+                selected === null
+                  ? null
+                  : [...new Map([...selected, ...visible].map((repo) => [repo.id, repo])).values()],
+              )
+            }
+          />
+          <Action
+            title="Untrack Filtered Repositories"
+            icon={Icon.Circle}
+            shortcut={{ modifiers: ["cmd", "shift"], key: "u" }}
+            onAction={() => {
+              const filteredIds = new Set(visible.map((repo) => repo.id));
+              return save((selected ?? allRepositories).filter((repo) => !filteredIds.has(repo.id)));
+            }}
+          />
+        </>
+      )}
       <Action title="Track All Repositories" icon={Icon.Checkmark} onAction={() => save(null)} />
       <Action title="Untrack All Repositories" icon={Icon.Circle} onAction={() => save([])} />
       <Action
@@ -76,6 +104,9 @@ export function ConfigureRepositories({
       isLoading={loading || saving}
       navigationTitle="Configure Repositories"
       searchBarPlaceholder="Search repositories…"
+      searchText={searchText}
+      onSearchTextChange={setSearchText}
+      filtering={false}
     >
       {error && (
         <List.Item
