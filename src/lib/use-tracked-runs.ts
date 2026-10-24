@@ -1,8 +1,16 @@
-import { launchCommand, LaunchType, LocalStorage, openExtensionPreferences, showToast, Toast } from "@raycast/api";
+import {
+  environment,
+  launchCommand,
+  LaunchType,
+  LocalStorage,
+  openExtensionPreferences,
+  showToast,
+  Toast,
+} from "@raycast/api";
 import { randomUUID } from "node:crypto";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkflowRun } from "./model";
-import { findNotifier } from "./notifications";
+import { prepareNotifier } from "./notifications";
 import { parseStored, RunState, stateKey, TrackedRun, trackingPrefix } from "./tracking";
 
 export function useTrackedRuns(token: string) {
@@ -41,7 +49,7 @@ export function useTrackedRuns(token: string) {
         if (run.status === "completed") {
           throw new Error("Completed runs cannot be tracked. Choose a queued or running run.");
         }
-        await findNotifier();
+        await prepareNotifier(environment.assetsPath);
         const watch: TrackedRun = {
           subscription: randomUUID(),
           run,

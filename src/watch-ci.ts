@@ -3,7 +3,7 @@ import { mkdir, open, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import { GitHubClient } from "./lib/github";
 import { checkTrackedRuns } from "./lib/monitor";
-import { findNotifier, notifyRun } from "./lib/notifications";
+import { prepareNotifier, notifyRun } from "./lib/notifications";
 import { github } from "./lib/oauth";
 import { trackingPrefix } from "./lib/tracking";
 
@@ -35,7 +35,7 @@ export default async function Command() {
       await updateCommandMetadata({ subtitle: "No runs tracked · Track a run from Recent CI" });
       return;
     }
-    const notifier = await findNotifier();
+    const notifier = await prepareNotifier(environment.assetsPath);
     const result = await checkTrackedRuns({
       prefix,
       storage: LocalStorage,

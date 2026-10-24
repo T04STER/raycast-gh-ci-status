@@ -30,17 +30,11 @@ The time filter uses run creation time. Runs created before the cutoff are exclu
 
 ## Notifications
 
-Notifications require `terminal-notifier`, installed through Homebrew:
-
-```sh
-brew install terminal-notifier
-```
-
-Both Apple Silicon (`/opt/homebrew/bin`) and Intel (`/usr/local/bin`) Homebrew installations are detected automatically. Tracking reports a setup error if the tool is missing.
+Notifications work out of the box with a helper bundled inside this extension. No Homebrew package or separate Raycast extension is required. The bundled terminal-notifier 3.1.0 app supports Apple Silicon and Intel natively; the extension always uses its own copy.
 
 After signing in through **Recent CI**, open **Watch CI Notifications** once and make sure **Background Refresh** is enabled for that command in Raycast Settings → Extensions → GitHub CI Status. Tracking a run also requests an immediate background check. Raycast controls scheduling, so checks may be delayed, especially on battery or while the computer is asleep. Background Refresh must remain enabled and Raycast must be running. If scheduled execution does not run for a development extension, use Raycast's **Run in Background** action to test it manually and check **Extension Diagnostics**.
 
-Allow notifications for **terminal-notifier** in macOS System Settings → Notifications. Focus and notification settings can suppress banners. This extension does not change those settings.
+Allow notifications for **terminal-notifier** (the bundled helper) in macOS System Settings → Notifications. macOS permission is still required even if you previously allowed a different installation. Focus and notification settings can suppress banners. This extension does not change those settings.
 
 Notifications include the final result, repository, workflow, branch, commit title, short SHA, and attempt number. Clicking the notification opens that run on GitHub. Success, failure, timeout, and cancellation are supported; other completed results such as skipped are reported with a neutral icon. The notification describes the workflow result, not an individual failed job or log excerpt.
 
@@ -52,7 +46,10 @@ Repository discovery is cached for 15 minutes. Scans use four concurrent workers
 
 ## Checks
 
+The helper app, license, and source attribution are committed under `assets/notification-helper`. Development and builds automatically verify its pinned binary checksum, app signature, and both CPU architectures without downloading anything. To regenerate it from the official, checksum-verified release on macOS, run `npm run setup:notifier`. This is a maintainer command; extension users do not need to run it.
+
 ```sh
+npm run check:notifier
 npm test
 npm run typecheck
 npm run lint

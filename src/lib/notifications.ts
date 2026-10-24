@@ -1,22 +1,32 @@
 import { execFile } from "node:child_process";
-import { access } from "node:fs/promises";
+import { access, chmod } from "node:fs/promises";
 import { constants } from "node:fs";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import { notificationFor } from "./tracking";
 import { WorkflowRun } from "./model";
 
 const execute = promisify(execFile);
 
-export async function findNotifier(): Promise<string> {
-  for (const path of ["/opt/homebrew/bin/terminal-notifier", "/usr/local/bin/terminal-notifier"]) {
-    try {
-      await access(path, constants.X_OK);
-      return path;
-    } catch {
-      // Raycast's PATH may not include Homebrew, so check both installation locations.
-    }
+export async function prepareNotifier(assetsPath: string): Promise<string> {
+  const path = join(
+    assetsPath,
+    "notification-helper",
+    "terminal-notifier.app",
+    "Contents",
+    "MacOS",
+    "terminal-notifier",
+  );
+  try {
+    await access(path, constants.R_OK);
+    // Extension archives may lose executable permissions when unpacked.
+    await access(path, constants.X_OK).catch(() => chmod(path, 0o755));
+    return path;
+  } catch {
+    throw new Error(
+      "The bundled notification helper is missing or unavailable. Reinstall GitHub CI Status, or rebuild it with npm run setup:notifier.",
+    );
   }
-  throw new Error("Install terminal-notifier with: brew install terminal-notifier. Then try tracking again.");
 }
 
 export async function notifyRun(run: WorkflowRun, notifier: string): Promise<void> {
