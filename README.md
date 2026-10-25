@@ -40,7 +40,9 @@ Notifications include the final result, repository, workflow, branch, commit tit
 
 Tracking is per run, separate from the repository filter. A tracked run stays tracked until you untrack it, including for later attempts of that same run. It does not subscribe to future runs of the workflow. Each newly completed attempt sends one notification. Only runs that have not completed can be newly tracked. Completed runs hide Track Notifications; already tracked runs can still be untracked after completion. Delivery errors retain the pending result for a later retry. No GitHub authorization dialog is opened by background checks; sign in again through **Recent CI** if access expires or is revoked.
 
-The monitor's command subtitle shows the last scan summary or an actionable error. A scan uses up to four concurrent requests and a 45-second request budget. It never requires full repository discovery, and an empty watch list makes no GitHub requests.
+Repository choices and tracked runs are saved per GitHub account ID, so signing in again to the same account preserves them when the access token changes. Existing choices stored under the currently authenticated token are migrated automatically. Older token-based choices cannot be assigned to an account after that token is lost or revoked.
+
+The monitor's command subtitle shows the last scan summary or an actionable error. A scan uses up to four concurrent requests and a 45-second request budget. Interrupted scans save a continuation point so later watches get checked on subsequent launches. It never requires full repository discovery; after resolving the signed-in account, an empty watch list makes no workflow requests. GitHub retry deadlines are cached between launches and checked before another scan starts.
 
 Repository discovery is cached for 15 minutes. Scans use four concurrent workers, pagination, request timeouts, and rate-limit handling. Partial failures are displayed; cached results are marked as potentially stale. GitHub limits filtered searches to 1,000 runs per repository, which produces a warning if reached.
 

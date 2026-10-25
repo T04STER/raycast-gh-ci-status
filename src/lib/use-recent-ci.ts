@@ -1,29 +1,9 @@
-import { Cache } from "@raycast/api";
-import { createHash } from "node:crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { GitHubClient } from "./github";
+import { createGitHubClient, readCache } from "./client";
 import { recentRuns, Repository, Snapshot } from "./model";
 
-function readCache<T>(cache: Cache, key: string): T | undefined {
-  try {
-    const value = cache.get(key);
-    return value ? (JSON.parse(value) as T) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function useGitHubClient(token: string) {
-  const cache = useMemo(() => new Cache({ namespace: createHash("sha256").update(token).digest("hex") }), [token]);
-  const client = useMemo(
-    () =>
-      new GitHubClient(token, fetch, {
-        get: () => readCache<{ repositories: Repository[]; savedAt: number }>(cache, "repositories"),
-        set: (value) => cache.set("repositories", JSON.stringify(value)),
-      }),
-    [token, cache],
-  );
-  return { cache, client };
+  return useMemo(() => createGitHubClient(token), [token]);
 }
 
 export function useRecentCI(token: string, lookback: number, repositories: Repository[] | null) {

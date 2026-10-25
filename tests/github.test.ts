@@ -242,6 +242,46 @@ test("secondary rate limits without headers pause requests", async () => {
   );
 });
 
+test("retry deadlines survive new clients and expired deadlines allow requests again", async () => {
+  let deadline: number | undefined;
+  const retryCache = {
+    get: () => deadline,
+    set: (value: number) => {
+      deadline = value;
+    },
+  };
+  let calls = 0;
+  const fetcher = mockFetch(() => {
+    calls++;
+    return calls === 1 ? json({ message: "rate limited" }, 429, { "retry-after": "180" }) : json({ id: 123 });
+  });
+  const first = new GitHubClient("token", fetcher, undefined, retryCache);
+  await assert.rejects(first.accountId(new AbortController().signal), /rate limit/);
+  assert.ok(deadline! >= Date.now() + 179_000);
+  const nextLaunch = new GitHubClient("token", fetcher, undefined, retryCache);
+  assert.throws(() => nextLaunch.checkRetryDeadline(), /rate limit/);
+  await assert.rejects(nextLaunch.accountId(new AbortController().signal), /rate limit/);
+  assert.equal(calls, 1);
+  deadline = Date.now() - 1;
+  const laterLaunch = new GitHubClient("token", fetcher, undefined, retryCache);
+  assert.equal(await laterLaunch.accountId(new AbortController().signal), 123);
+  assert.equal(calls, 2);
+});
+
+test("account identity uses the authenticated user and validates the returned ID", async () => {
+  for (const id of [123, null, "123", -1]) {
+    const client = new GitHubClient(
+      "token",
+      mockFetch((url) => {
+        assert.equal(url.pathname, "/user");
+        return json({ id });
+      }),
+    );
+    if (id === 123) assert.equal(await client.accountId(new AbortController().signal), 123);
+    else await assert.rejects(client.accountId(new AbortController().signal), /invalid account ID/);
+  }
+});
+
 test("invalid authentication produces an actionable error", async () => {
   const client = new GitHubClient(
     "secret",

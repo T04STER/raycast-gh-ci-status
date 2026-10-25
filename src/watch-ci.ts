@@ -1,7 +1,7 @@
 import { environment, LaunchType, LocalStorage, showToast, Toast, updateCommandMetadata } from "@raycast/api";
 import { mkdir, open, stat, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { GitHubClient } from "./lib/github";
+import { createGitHubClient, resolveAccount } from "./lib/client";
 import { checkTrackedRuns } from "./lib/monitor";
 import { prepareNotifier, notifyRun } from "./lib/notifications";
 import { github } from "./lib/oauth";
@@ -29,7 +29,11 @@ export default async function Command() {
     if (!tokens?.accessToken || tokens.isExpired()) {
       throw new Error("Open Recent CI to sign in to GitHub before monitoring runs.");
     }
-    const prefix = trackingPrefix(tokens.accessToken);
+    const signal = AbortSignal.timeout(45_000);
+    const { client, cache } = createGitHubClient(tokens.accessToken);
+    client.checkRetryDeadline();
+    const accountId = await resolveAccount(tokens.accessToken, cache, client, signal);
+    const prefix = trackingPrefix(accountId);
     const items = await LocalStorage.allItems();
     if (!Object.keys(items).some((key) => key.startsWith(prefix))) {
       await updateCommandMetadata({ subtitle: "No runs tracked · Track a run from Recent CI" });
@@ -39,9 +43,9 @@ export default async function Command() {
     const result = await checkTrackedRuns({
       prefix,
       storage: LocalStorage,
-      client: new GitHubClient(tokens.accessToken),
+      client,
       notify: (run) => notifyRun(run, notifier),
-      signal: AbortSignal.timeout(45_000),
+      signal,
     });
     if (result.errors.length) console.error(result.errors.join("\n"));
     const summary = `${result.checked}/${result.total} tracked runs checked · ${result.notified} notifications`;

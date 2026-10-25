@@ -9,11 +9,12 @@ import {
   List,
   openExtensionPreferences,
 } from "@raycast/api";
-import { getAccessToken, useLocalStorage, withAccessToken } from "@raycast/utils";
-import { createHash } from "node:crypto";
+import { getAccessToken, useLocalStorage, usePromise, withAccessToken } from "@raycast/utils";
 import { parseLookback, Repository, runStatus, WorkflowRun } from "./lib/model";
 import { ConfigureRepositories } from "./configure-repositories";
-import { useRecentCI } from "./lib/use-recent-ci";
+import { useGitHubClient, useRecentCI } from "./lib/use-recent-ci";
+import { resolveAccount } from "./lib/client";
+import { repositoriesKey } from "./lib/tracking";
 import { github } from "./lib/oauth";
 import { useTrackedRuns } from "./lib/use-tracked-runs";
 
@@ -22,16 +23,28 @@ function PreferencesAction() {
 }
 
 function Command() {
-  const preferences = getPreferenceValues<{ lookback: string }>();
   const { token } = getAccessToken();
+  const { client, cache } = useGitHubClient(token);
+  const {
+    data: accountId,
+    error,
+    isLoading,
+  } = usePromise(
+    async (accessToken: string) => resolveAccount(accessToken, cache, client, AbortSignal.timeout(20_000)),
+    [token],
+  );
+  if (error) return <Detail markdown={`# Unable to load GitHub account\n\n${error.message}`} />;
+  if (isLoading || !accountId) return <List isLoading />;
+  return <AccountCommand key={accountId} token={token} accountId={accountId} />;
+}
+
+function AccountCommand({ token, accountId }: { token: string; accountId: number }) {
+  const preferences = getPreferenceValues<Preferences>();
   const {
     value: repositories,
     setValue: setRepositories,
     isLoading,
-  } = useLocalStorage<Repository[] | null>(
-    `tracked-repositories:${createHash("sha256").update(token).digest("hex")}`,
-    null,
-  );
+  } = useLocalStorage<Repository[] | null>(repositoriesKey(accountId), null);
   let lookback: number;
   try {
     lookback = parseLookback(preferences.lookback);
@@ -51,6 +64,7 @@ function Command() {
   return (
     <RecentCI
       token={token}
+      accountId={accountId}
       lookback={lookback}
       period={preferences.lookback.trim()}
       repositories={repositories ?? null}
@@ -70,19 +84,21 @@ const icons = {
 
 function RecentCI({
   token,
+  accountId,
   lookback,
   period,
   repositories,
   setRepositories,
 }: {
   token: string;
+  accountId: number;
   lookback: number;
   period: string;
   repositories: Repository[] | null;
   setRepositories: (repositories: Repository[] | null) => Promise<void>;
 }) {
   const { snapshot, loading, cached, refresh } = useRecentCI(token, lookback, repositories);
-  const { tracked, toggle, reload: reloadTracked } = useTrackedRuns(token);
+  const { tracked, toggle, reload: reloadTracked } = useTrackedRuns(accountId);
   const trackedIds = new Set(tracked.map((watch) => watch.run.id));
   const progress = loading
     ? `Checking ${snapshot.checked}/${snapshot.total || "…"} repositories`

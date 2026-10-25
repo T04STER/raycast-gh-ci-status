@@ -13,8 +13,8 @@ import { WorkflowRun } from "./model";
 import { prepareNotifier } from "./notifications";
 import { parseStored, RunState, stateKey, TrackedRun, trackingPrefix } from "./tracking";
 
-export function useTrackedRuns(token: string) {
-  const prefix = trackingPrefix(token);
+export function useTrackedRuns(accountId: number) {
+  const prefix = trackingPrefix(accountId);
   const [tracked, setTracked] = useState<TrackedRun[]>([]);
   const saving = useRef(false);
   const reload = useCallback(async () => {

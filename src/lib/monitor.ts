@@ -16,12 +16,17 @@ export async function checkTrackedRuns(options: {
   signal: AbortSignal;
 }) {
   const { prefix, storage, client, notify, signal } = options;
+  const continuationKey = `ci-watch-continuation:${prefix}`;
   const entries = Object.entries(await storage.allItems())
     .filter(([key]) => key.startsWith(prefix))
     .flatMap(([key, value]) => {
       const watch = parseStored<TrackedRun>(value);
       return watch?.subscription && watch.run?.id ? [{ key, watch }] : [];
-    });
+    })
+    .sort((a, b) => a.key.localeCompare(b.key));
+  const nextKey = await storage.getItem(continuationKey);
+  const start = typeof nextKey === "string" ? entries.findIndex(({ key }) => key.localeCompare(nextKey) >= 0) : 0;
+  if (start > 0) entries.push(...entries.splice(0, start));
   const errors: string[] = [];
   let cursor = 0;
   let checked = 0;
@@ -60,6 +65,9 @@ export async function checkTrackedRuns(options: {
     }
   };
   await Promise.all(Array.from({ length: Math.min(4, entries.length) }, worker));
+  // Advance past attempted requests even when they time out. Persist a key rather than
+  // an index so removing or adding watches does not reset progress.
+  if (cursor > 0) await storage.setItem(continuationKey, entries[cursor % entries.length].key);
   if (signal.aborted && !errors.length) errors.push("The scan timed out; remaining runs will be checked next time.");
   return { checked, notified, total: entries.length, errors };
 }

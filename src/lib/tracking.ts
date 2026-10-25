@@ -12,8 +12,41 @@ export interface RunState {
   notifiedAttempt: number;
 }
 
-export function trackingPrefix(token: string) {
-  return `ci-watch:${createHash("sha256").update(token).digest("hex")}:`;
+export function tokenFingerprint(token: string) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+export function trackingPrefix(accountId: number) {
+  return `ci-watch:account:${accountId}:`;
+}
+
+export function repositoriesKey(accountId: number) {
+  return `tracked-repositories:account:${accountId}`;
+}
+
+// Only migrate keys for the authenticated token: other legacy keys may belong to another account.
+export async function migrateAccountChoices(
+  accountId: number,
+  token: string,
+  storage: {
+    allItems(): Promise<Record<string, unknown>>;
+    setItem(key: string, value: string): Promise<void>;
+    removeItem(key: string): Promise<void>;
+  },
+) {
+  const items = await storage.allItems();
+  const fingerprint = tokenFingerprint(token);
+  const legacyPrefix = `ci-watch:${fingerprint}:`;
+  for (const [key, value] of Object.entries(items)) {
+    const destination = key.startsWith(legacyPrefix)
+      ? `${trackingPrefix(accountId)}${key.slice(legacyPrefix.length)}`
+      : key === `tracked-repositories:${fingerprint}`
+        ? repositoriesKey(accountId)
+        : undefined;
+    if (!destination || typeof value !== "string") continue;
+    if (items[destination] === undefined) await storage.setItem(destination, value);
+    await storage.removeItem(key);
+  }
 }
 
 export function stateKey(watch: TrackedRun) {

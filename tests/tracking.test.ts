@@ -3,7 +3,17 @@ import { test } from "node:test";
 import { GitHubError } from "../src/lib/github";
 import { checkTrackedRuns, WatchStorage } from "../src/lib/monitor";
 import { WorkflowRun } from "../src/lib/model";
-import { notificationFor, RunState, shouldNotify, stateKey, TrackedRun } from "../src/lib/tracking";
+import {
+  migrateAccountChoices,
+  notificationFor,
+  repositoriesKey,
+  RunState,
+  shouldNotify,
+  stateKey,
+  tokenFingerprint,
+  TrackedRun,
+  trackingPrefix,
+} from "../src/lib/tracking";
 
 const run: WorkflowRun = {
   id: 42,
@@ -29,7 +39,7 @@ const completed = (conclusion = "success", attempt = 1): WorkflowRun => ({
   run_attempt: attempt,
 });
 
-function fixture(watches = { [key]: JSON.stringify(watch) }) {
+function fixture(watches: Record<string, string> = { [key]: JSON.stringify(watch) }) {
   const values: Record<string, string> = { ...watches };
   const storage: WatchStorage = {
     allItems: async () => ({ ...values }),
@@ -153,4 +163,119 @@ test("delivery state cannot suppress a newer attempt or notify a different run",
   assert.equal(shouldNotify(watch, state, completed()), false);
   assert.equal(shouldNotify(watch, state, completed("success", 2)), true);
   assert.equal(shouldNotify(watch, state, { ...completed("success", 2), id: 99 }), false);
+});
+
+test("saved choices follow the account across token replacement and remain isolated from other accounts", async () => {
+  const accountId = 123;
+  const oldToken = "old-token";
+  const newToken = "replacement-token";
+  const legacyKey = `ci-watch:${tokenFingerprint(oldToken)}:42`;
+  const legacyRepos = `tracked-repositories:${tokenFingerprint(oldToken)}`;
+  const otherKey = `ci-watch:${tokenFingerprint("other-account-token")}:42`;
+  const { values } = fixture({
+    [legacyKey]: JSON.stringify(watch),
+    [legacyRepos]: JSON.stringify([run.repository]),
+    [otherKey]: JSON.stringify(watch),
+    [stateKey(watch)]: JSON.stringify({ run: completed(), notifiedAttempt: 1 }),
+  });
+  const storage = {
+    allItems: async () => ({ ...values }),
+    setItem: async (key: string, value: string) => {
+      values[key] = value;
+    },
+    removeItem: async (key: string) => {
+      delete values[key];
+    },
+  };
+  await migrateAccountChoices(accountId, oldToken, storage);
+  await migrateAccountChoices(accountId, newToken, storage);
+  assert.equal(values[`${trackingPrefix(accountId)}42`], JSON.stringify(watch));
+  assert.equal(values[repositoriesKey(accountId)], JSON.stringify([run.repository]));
+  assert.ok(values[stateKey(watch)]);
+  assert.equal(values[legacyKey], undefined);
+  assert.equal(values[legacyRepos], undefined);
+  assert.ok(values[otherKey]);
+  assert.equal(values[`${trackingPrefix(456)}42`], undefined);
+});
+
+test("legacy choices do not overwrite newer account choices", async () => {
+  const { values } = fixture({
+    [`tracked-repositories:${tokenFingerprint("token")}`]: JSON.stringify([run.repository]),
+    [repositoriesKey(123)]: "[]",
+  });
+  await migrateAccountChoices(123, "token", {
+    allItems: async () => values,
+    setItem: async (key, value) => {
+      values[key] = value;
+    },
+    removeItem: async (key) => {
+      delete values[key];
+    },
+  });
+  assert.equal(values[repositoriesKey(123)], "[]");
+});
+
+test("interrupted scans resume beyond slow watches, even after the continuation watch is removed", async () => {
+  const watches = Object.fromEntries(
+    Array.from({ length: 13 }, (_, index) => {
+      const id = index + 1;
+      return [
+        `test:${String(id).padStart(2, "0")}`,
+        JSON.stringify({ ...watch, subscription: `sub-${id}`, run: { ...run, id } }),
+      ];
+    }),
+  );
+  const { values } = fixture(watches);
+  const storage: WatchStorage = {
+    allItems: async () => ({ ...values }),
+    getItem: async (key) => values[key],
+    setItem: async (key, value) => {
+      values[key] = value;
+    },
+  };
+  const attempted: number[] = [];
+  const controller = new AbortController();
+  await checkTrackedRuns({
+    prefix: "test:",
+    storage,
+    signal: controller.signal,
+    notify: async () => {},
+    client: {
+      run: async (_, id) => {
+        attempted.push(id);
+        if (attempted.length === 12) controller.abort();
+        throw new Error("Request timed out");
+      },
+    },
+  });
+  assert.equal(attempted.length, 12);
+  const sent: number[] = [];
+  await checkTrackedRuns({
+    prefix: "test:",
+    storage,
+    signal: new AbortController().signal,
+    notify: async (run) => {
+      sent.push(run.id);
+    },
+    client: { run: async (_, id) => ({ ...completed(), id }) },
+  });
+  assert.equal(sent[0], 13);
+  // The saved continuation points at 13. A removed watch must not reset the queue.
+  delete values["test:13"];
+  attempted.length = 0;
+  const stop = new AbortController();
+  await checkTrackedRuns({
+    prefix: "test:",
+    storage,
+    signal: stop.signal,
+    notify: async () => {},
+    client: {
+      run: async (_, id) => {
+        attempted.push(id);
+        stop.abort();
+        throw new Error("Request timed out");
+      },
+    },
+  });
+  assert.equal(attempted[0], 1);
 });

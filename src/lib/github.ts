@@ -18,6 +18,11 @@ export interface RepositoryCache {
   set(value: { repositories: Repository[]; savedAt: number }): void;
 }
 
+export interface RetryCache {
+  get(): number | undefined;
+  set(deadline: number): void;
+}
+
 export class GitHubClient {
   private blockedUntil = 0;
 
@@ -25,9 +30,11 @@ export class GitHubClient {
     private readonly token: string,
     private readonly fetcher: typeof fetch = fetch,
     private readonly repositoryCache?: RepositoryCache,
+    private readonly retryCache?: RetryCache,
   ) {}
 
-  private async get<T>(path: string, signal: AbortSignal): Promise<{ data: T; hasNext: boolean }> {
+  checkRetryDeadline() {
+    this.blockedUntil = Math.max(this.blockedUntil, this.retryCache?.get() ?? 0);
     if (Date.now() < this.blockedUntil) {
       throw new GitHubError(
         `GitHub rate limit reached. Retry after ${new Date(this.blockedUntil).toLocaleTimeString()}.`,
@@ -35,6 +42,10 @@ export class GitHubClient {
         true,
       );
     }
+  }
+
+  private async get<T>(path: string, signal: AbortSignal): Promise<{ data: T; hasNext: boolean }> {
+    this.checkRetryDeadline();
     const response = await this.fetcher(`${API}${path}`, {
       headers: {
         Accept: "application/vnd.github+json",
@@ -54,7 +65,13 @@ export class GitHubClient {
       if (limited || (response.status === 403 && /rate limit|abuse/i.test(body.message ?? ""))) {
         const reset = Number(response.headers.get("x-ratelimit-reset")) * 1000;
         const retrySeconds = Number(retryAfter);
-        this.blockedUntil = Math.max(Date.now() + (retrySeconds > 0 ? retrySeconds : 60) * 1000, reset || 0);
+        this.blockedUntil = Math.max(
+          this.blockedUntil,
+          this.retryCache?.get() ?? 0,
+          Date.now() + (retrySeconds > 0 ? retrySeconds : 60) * 1000,
+          reset || 0,
+        );
+        this.retryCache?.set(this.blockedUntil);
         throw new GitHubError(
           `GitHub rate limit reached. Retry after ${new Date(this.blockedUntil).toLocaleTimeString()}.`,
           response.status,
@@ -74,6 +91,12 @@ export class GitHubClient {
       throw new GitHubError(`GitHub request failed (HTTP ${response.status}). Try refreshing.`, response.status);
     }
     return { data: (await response.json()) as T, hasNext: /rel="next"/.test(response.headers.get("link") ?? "") };
+  }
+
+  async accountId(signal: AbortSignal): Promise<number> {
+    const { data } = await this.get<{ id: number }>("/user", signal);
+    if (!Number.isSafeInteger(data.id) || data.id <= 0) throw new Error("GitHub returned an invalid account ID.");
+    return data.id;
   }
 
   async repositories(signal: AbortSignal, force = false): Promise<Repository[]> {
