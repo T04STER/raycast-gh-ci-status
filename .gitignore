@@ -4,3 +4,4 @@ dist/
 *.log
 raycast-env.d.ts
 .env*
+.aider*
