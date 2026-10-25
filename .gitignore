@@ -5,3 +5,4 @@ dist/
 raycast-env.d.ts
 .env*
 .aider*
+/tmp/
